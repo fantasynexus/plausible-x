@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - "plausible-provisioner/**"
+      - "plausible-x/**"
       - "compose.yml"
       - ".github/workflows/deploy.yml"
 
@@ -43,7 +43,7 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: ./plausible-provisioner
+          context: ./plausible-x
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

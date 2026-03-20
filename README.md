@@ -1,6 +1,6 @@
 # Plausible X Stack (Dokploy + GHCR + Provisioner)
 
-This repository contains the Plausible X deployment stack: self-hosted Plausible CE plus a small Go API (`plausible-provisioner`) used to provision custom events/goals.
+This repository contains the Plausible X deployment stack: self-hosted Plausible CE plus a small Go API (`plausible-x`) used to provision custom events/goals.
 
 ## Services
 
@@ -16,8 +16,8 @@ All services run on the external Docker network `dokploy-network`.
 ## Repository Structure
 
 - `compose.yml` - Full runtime stack for Dokploy
-- `plausible-provisioner/main.go` - Plausible X API source code
-- `plausible-provisioner/Dockerfile` - Plausible X image build
+- `plausible-x/main.go` - Plausible X API source code
+- `plausible-x/Dockerfile` - Plausible X image build
 - `.github/workflows/deploy.yml` - CI/CD pipeline (build, push, deploy)
 
 ## Provisioner API
@@ -89,7 +89,7 @@ Current provisioner endpoints are not authenticated. If exposed publicly, add re
 If you want to run only the provisioner locally:
 
 ```bash
-cd plausible-provisioner
+cd plausible-x
 go mod tidy
 DATABASE_URL="postgres://postgres:postgres@localhost:5432/plausible_db?sslmode=disable" PORT=8080 go run .
 ```
