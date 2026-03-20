@@ -9,15 +9,15 @@ Defined in `compose.yml`:
 - `plausible_db` (Postgres 16)
 - `plausible_events_db` (ClickHouse 24.12)
 - `plausible` (Plausible Community Edition v3.2.0)
-- `plausible_provisioner` (Plausible X provisioner image from GHCR)
+- `plausible_x` (Plausible X provisioner image from GHCR)
 
 All services run on the external Docker network `dokploy-network`.
 
 ## Repository Structure
 
 - `compose.yml` - Full runtime stack for Dokploy
-- `plausible-provisioner/main.go` - Plausible X provisioning API source code
-- `plausible-provisioner/Dockerfile` - Plausible X provisioner image build
+- `plausible-provisioner/main.go` - Plausible X API source code
+- `plausible-provisioner/Dockerfile` - Plausible X image build
 - `.github/workflows/deploy.yml` - CI/CD pipeline (build, push, deploy)
 
 ## Provisioner API
@@ -56,7 +56,7 @@ Workflow file: `.github/workflows/deploy.yml`
 
 On push to `main` (when relevant paths change), the workflow:
 
-1. Builds `plausible-provisioner` image with Buildx
+1. Builds `plausible-x` image with Buildx
 2. Pushes to GitHub Container Registry (`ghcr.io`)
 3. Tags image as:
    - `latest`
@@ -76,7 +76,7 @@ Configure this repository secret:
 Recommended domain mapping for Plausible X:
 
 - `plausible-x.yourdomain.com` -> `plausible`
-- `plausible-x-api.yourdomain.com` -> `plausible_provisioner`
+- `plausible-x-api.yourdomain.com` -> `plausible_x`
 
 This keeps public analytics traffic and provisioning API traffic isolated.
 
