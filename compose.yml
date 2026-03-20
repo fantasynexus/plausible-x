@@ -68,8 +68,6 @@ services:
         condition: service_healthy
     env_file:
       - .env
-    environment:
-      - EXTRA_CONFIG_PATH=/app/log_config.exs
     command: >
       sh -c "
         /entrypoint.sh db createdb &&
