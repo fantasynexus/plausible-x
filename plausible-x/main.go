@@ -77,25 +77,56 @@ func (s *server) ensureGoal(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
+	startedAt := time.Now()
 	var payload ensureGoalRequest
 
+	log.Printf(
+		"ensure goal request received: method=%s path=%s remote=%s user_agent=%q",
+		r.Method,
+		r.URL.Path,
+		r.RemoteAddr,
+		r.UserAgent(),
+	)
+
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		log.Printf("ensure goal invalid json: remote=%s error=%v", r.RemoteAddr, err)
 		http.Error(w, "invalid json body", http.StatusBadRequest)
 		return
 	}
+
+	log.Printf(
+		"ensure goal payload received: domain=%q event=%q props=%v",
+		payload.Domain,
+		payload.EventName,
+		payload.Props,
+	)
 
 	payload.Domain = strings.TrimSpace(payload.Domain)
 	payload.EventName = strings.TrimSpace(payload.EventName)
 	payload.Props = normalizeProps(payload.Props)
 
+	log.Printf(
+		"ensure goal payload normalized: domain=%q event=%q props=%v",
+		payload.Domain,
+		payload.EventName,
+		payload.Props,
+	)
+
 	if payload.Domain == "" || payload.EventName == "" {
+		log.Printf(
+			"ensure goal missing required fields: domain_present=%t event_present=%t",
+			payload.Domain != "",
+			payload.EventName != "",
+		)
 		http.Error(w, "domain and event_name are required", http.StatusBadRequest)
 		return
 	}
 
+	log.Printf("ensure goal resolving site: domain=%s", payload.Domain)
 	siteID, err := s.findSiteID(ctx, payload.Domain)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
+			log.Printf("ensure goal site not found: domain=%s", payload.Domain)
 			http.Error(w, "site not found", http.StatusNotFound)
 			return
 		}
@@ -105,6 +136,18 @@ func (s *server) ensureGoal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.Printf(
+		"ensure goal site resolved: domain=%s site_id=%d",
+		payload.Domain,
+		siteID,
+	)
+	log.Printf(
+		"ensure goal inserting goal: site_id=%d domain=%s event=%s props=%v",
+		siteID,
+		payload.Domain,
+		payload.EventName,
+		payload.Props,
+	)
 	created, err := s.insertGoal(ctx, siteID, payload.EventName)
 	if err != nil {
 		log.Printf("insert goal failed: domain=%s event=%s props=%v error=%v", payload.Domain, payload.EventName, payload.Props, err)
@@ -118,6 +161,13 @@ func (s *server) ensureGoal(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Printf("goal ensured: domain=%s site_id=%d event=%s props=%v status=%s", payload.Domain, siteID, payload.EventName, payload.Props, status)
+	log.Printf(
+		"ensure goal request completed: domain=%s event=%s status=%s duration_ms=%d",
+		payload.Domain,
+		payload.EventName,
+		status,
+		time.Since(startedAt).Milliseconds(),
+	)
 
 	w.Header().Set("Content-Type", "application/json")
 	if created {
@@ -138,6 +188,10 @@ func (s *server) findSiteID(ctx context.Context, domain string) (int64, error) {
 		domain,
 	).Scan(&siteID)
 
+	if err == nil {
+		log.Printf("find site id succeeded: domain=%s site_id=%d", domain, siteID)
+	}
+
 	return siteID, err
 }
 
@@ -146,6 +200,7 @@ func (s *server) insertGoal(ctx context.Context, siteID int64, eventName string)
 
 	// Plausible CE v3.2.0 stores custom properties on events and goal filters,
 	// but does not expose a separate site-level custom props table to provision.
+	log.Printf("insert goal query start: site_id=%d event=%s", siteID, eventName)
 	err := s.db.QueryRowContext(
 		ctx,
 		`
@@ -169,13 +224,16 @@ func (s *server) insertGoal(ctx context.Context, siteID int64, eventName string)
 	).Scan(&goalID)
 
 	if errors.Is(err, sql.ErrNoRows) {
+		log.Printf("insert goal skipped due to conflict: site_id=%d event=%s", siteID, eventName)
 		return false, nil
 	}
 
 	if err != nil {
+		log.Printf("insert goal query error: site_id=%d event=%s error=%v", siteID, eventName, err)
 		return false, err
 	}
 
+	log.Printf("insert goal query created row: site_id=%d event=%s goal_id=%d", siteID, eventName, goalID)
 	return true, nil
 }
 
