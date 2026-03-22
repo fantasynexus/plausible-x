@@ -264,27 +264,14 @@ func (s *server) ensureAllowedEventProps(ctx context.Context, siteID int64, prop
 		return nil, nil
 	}
 
-	var allowedEventProps []string
+	log.Printf("ensure allowed event props start: site_id=%d new_props=%v", siteID, props)
 
-	log.Printf("ensure allowed event props query start: site_id=%d props=%v", siteID, props)
+	var currentCSV sql.NullString
 	err := s.db.QueryRowContext(
 		ctx,
-		`
-		UPDATE sites
-		SET allowed_event_props = ARRAY(
-			SELECT DISTINCT prop
-			FROM unnest(
-				COALESCE(allowed_event_props, ARRAY[]::varchar[]) || $2::varchar[]
-			) AS prop
-			WHERE prop IS NOT NULL AND prop <> ''
-			ORDER BY prop
-		)
-		WHERE id = $1
-		RETURNING allowed_event_props
-		`,
+		`SELECT array_to_string(COALESCE(allowed_event_props, ARRAY[]::varchar[]), ',') FROM sites WHERE id = $1`,
 		siteID,
-		props,
-	).Scan(&allowedEventProps)
+	).Scan(&currentCSV)
 
 	if errors.Is(err, sql.ErrNoRows) {
 		log.Printf("ensure allowed event props site not found: site_id=%d", siteID)
@@ -292,12 +279,63 @@ func (s *server) ensureAllowedEventProps(ctx context.Context, siteID int64, prop
 	}
 
 	if err != nil {
-		log.Printf("ensure allowed event props query error: site_id=%d props=%v error=%v", siteID, props, err)
+		log.Printf("ensure allowed event props select error: site_id=%d error=%v", siteID, err)
 		return nil, err
 	}
 
-	log.Printf("ensure allowed event props query updated row: site_id=%d allowed_event_props=%v", siteID, allowedEventProps)
-	return allowedEventProps, nil
+	existing := make(map[string]struct{})
+	if currentCSV.Valid && currentCSV.String != "" {
+		for _, p := range strings.Split(currentCSV.String, ",") {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				existing[p] = struct{}{}
+			}
+		}
+	}
+
+	log.Printf("ensure allowed event props current: site_id=%d existing=%v", siteID, existing)
+
+	changed := false
+	for _, p := range props {
+		if _, ok := existing[p]; !ok {
+			existing[p] = struct{}{}
+			changed = true
+		}
+	}
+
+	if !changed {
+		merged := sortedKeys(existing)
+		log.Printf("ensure allowed event props no change needed: site_id=%d allowed_event_props=%v", siteID, merged)
+		return merged, nil
+	}
+
+	merged := sortedKeys(existing)
+	mergedCSV := strings.Join(merged, ",")
+
+	log.Printf("ensure allowed event props updating: site_id=%d merged=%v", siteID, merged)
+
+	_, err = s.db.ExecContext(
+		ctx,
+		`UPDATE sites SET allowed_event_props = string_to_array($2, ',') WHERE id = $1`,
+		siteID,
+		mergedCSV,
+	)
+	if err != nil {
+		log.Printf("ensure allowed event props update error: site_id=%d error=%v", siteID, err)
+		return nil, err
+	}
+
+	log.Printf("ensure allowed event props updated: site_id=%d allowed_event_props=%v", siteID, merged)
+	return merged, nil
+}
+
+func sortedKeys(m map[string]struct{}) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	return keys
 }
 
 func normalizeProps(props []string) []string {
