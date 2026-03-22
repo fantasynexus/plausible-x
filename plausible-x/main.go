@@ -141,6 +141,27 @@ func (s *server) ensureGoal(w http.ResponseWriter, r *http.Request) {
 		payload.Domain,
 		siteID,
 	)
+	allowedEventProps, err := s.ensureAllowedEventProps(ctx, siteID, payload.Props)
+	if err != nil {
+		log.Printf(
+			"ensure allowed event props failed: domain=%s site_id=%d props=%v error=%v",
+			payload.Domain,
+			siteID,
+			payload.Props,
+			err,
+		)
+		http.Error(w, "failed to ensure custom properties", http.StatusInternalServerError)
+		return
+	}
+
+	if len(payload.Props) > 0 {
+		log.Printf(
+			"ensure goal site custom properties updated: domain=%s site_id=%d allowed_event_props=%v",
+			payload.Domain,
+			siteID,
+			allowedEventProps,
+		)
+	}
 	log.Printf(
 		"ensure goal inserting goal: site_id=%d domain=%s event=%s props=%v",
 		siteID,
@@ -235,6 +256,48 @@ func (s *server) insertGoal(ctx context.Context, siteID int64, eventName string)
 
 	log.Printf("insert goal query created row: site_id=%d event=%s goal_id=%d", siteID, eventName, goalID)
 	return true, nil
+}
+
+func (s *server) ensureAllowedEventProps(ctx context.Context, siteID int64, props []string) ([]string, error) {
+	if len(props) == 0 {
+		log.Printf("ensure allowed event props skipped: site_id=%d reason=no_props", siteID)
+		return nil, nil
+	}
+
+	var allowedEventProps []string
+
+	log.Printf("ensure allowed event props query start: site_id=%d props=%v", siteID, props)
+	err := s.db.QueryRowContext(
+		ctx,
+		`
+		UPDATE sites
+		SET allowed_event_props = ARRAY(
+			SELECT DISTINCT prop
+			FROM unnest(
+				COALESCE(allowed_event_props, ARRAY[]::varchar[]) || $2::varchar[]
+			) AS prop
+			WHERE prop IS NOT NULL AND prop <> ''
+			ORDER BY prop
+		)
+		WHERE id = $1
+		RETURNING allowed_event_props
+		`,
+		siteID,
+		props,
+	).Scan(&allowedEventProps)
+
+	if errors.Is(err, sql.ErrNoRows) {
+		log.Printf("ensure allowed event props site not found: site_id=%d", siteID)
+		return nil, sql.ErrNoRows
+	}
+
+	if err != nil {
+		log.Printf("ensure allowed event props query error: site_id=%d props=%v error=%v", siteID, props, err)
+		return nil, err
+	}
+
+	log.Printf("ensure allowed event props query updated row: site_id=%d allowed_event_props=%v", siteID, allowedEventProps)
+	return allowedEventProps, nil
 }
 
 func normalizeProps(props []string) []string {
