@@ -76,6 +76,10 @@ services:
       "
 
   plausible_x:
+    # Dokploy clones this repository before running `docker compose up --build`,
+    # so build the provisioner from source instead of relying on a cached `latest` image.
+    build:
+      context: ./plausible-x
     image: ghcr.io/fantasynexus/plausible-x:latest
     restart: always
     logging:
